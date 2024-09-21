@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MP4 to MP5 Converter</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    input[type="file"] { margin: 20px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.8"></script>
+</head>
+<body>
+
+<div>
+  <h1>MP4 to MP5 Converter</h1>
+  <p>Select MP4 files to convert:</p>
+  <input type="file" id="inputFiles" accept=".mp4" multiple>
+  
+  <div>
+    <input type="checkbox" id="compressCheckbox">
+    <label for="compressCheckbox">Compress to 10MB</label>
+  </div>
+  
+  <br>
+  <button onclick="convertVideos()">Convert to MP5</button>
+  
+  <p id="status"></p>
+</div>
+
+<script>
+  const { createFFmpeg, fetchFile } = FFmpeg;
+  const ffmpeg = createFFmpeg({ log: true });
+
+  async function convertVideos() {
+    const files = document.getElementById('inputFiles').files;
+    const compress = document.getElementById('compressCheckbox').checked;
+    if (files.length === 0) {
+      alert('Please select MP4 files!');
+      return;
+    }
+
+    const status = document.getElementById('status');
+    status.innerHTML = 'Loading FFmpeg...';
+    
+    // Load FFmpeg
+    if (!ffmpeg.isLoaded()) {
+      await ffmpeg.load();
+    }
+
+    status.innerHTML = 'Converting...';
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileName = file.name.replace('.mp4', '.mp5');
+
+      // Read the file and write to FFmpeg's virtual filesystem
+      ffmpeg.FS('writeFile', file.name, await fetchFile(file));
+
+      // Define FFmpeg arguments for video upscaling
+      let ffmpegArgs = ['-i', file.name, 
+                        '-vf', 'scale=2560:1440,fps=120',  // Upscale to 2K and 120fps
+                        '-b:v', '100000k',                 // Set video bitrate to 100,000 kbps
+                        '-b:a', '192k',                    // Set audio bitrate
+                        '-ar', '44100',                    // Set audio frequency to 44100Hz
+                        '-ac', '2',                        // Stereo sound
+                        fileName];
+
+      // If compress is checked, adjust the bitrate to aim for a 10MB file
+      if (compress) {
+        // Target size is 10MB = 10*1024*1024 bytes, adjust bitrate accordingly
+        ffmpegArgs = ['-i', file.name, 
+                      '-vf', 'scale=2560:1440,fps=120',  // Keep the same resolution and FPS
+                      '-b:v', '1000k',                  // Lower video bitrate (~1 Mbps) to fit 10MB size
+                      '-b:a', '128k',                   // Lower audio bitrate to 128 kbps
+                      '-ar', '44100',                   // Keep audio frequency
+                      '-ac', '2',                       // Stereo sound
+                      fileName];
+      }
+
+      // Run FFmpeg command
+      await ffmpeg.run(...ffmpegArgs);
+
+      // Get the output from FFmpeg's virtual filesystem
+      const data = ffmpeg.FS('readFile', fileName);
+
+      // Create a download link for the output file
+      const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click(); // Automatically start download
+      document.body.removeChild(a);
+
+      status.innerHTML = `Converted ${file.name} to ${fileName} successfully.`;
+    }
+  }
+</script>
+
+</body>
+</html>
